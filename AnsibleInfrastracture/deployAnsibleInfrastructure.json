@@ -1,0 +1,487 @@
+﻿{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "_ansibleConfigScriptsLocation": {
+      "type": "string"
+    },
+    "_ansibleConfigScriptsLocationAccountKey": {
+      "type": "string"
+    },
+    "_ansibleConfigScriptsStorageAccountName": {
+      "type": "string"
+    },
+    "_adminUsername": {
+      "type": "string"
+    },
+    "_adminPassword": {
+      "type": "string"
+    },
+    "_sshKeyData": {
+      "type": "string"
+    },
+    "storageAccountType": {
+      "type": "string"
+    },
+    "numberOfAnsibleNodes": {
+      "type": "int"
+    },
+   /* "masterNodeVMSize": {
+      "type": "string"
+    }, */
+    "ansibleNodeVMSize": {
+      "type": "string"
+    },
+    "ansibleControllerVMSize": {
+      "type": "string"
+    },
+    "dnsPrefixAnsibleController": {
+      "type": "string"
+    },
+
+    "ansibleNodeVmNamePattern": {
+      "type": "string"
+    },
+    "ansibleControllerVMname": {
+      "type": "string"
+    },
+    "linuxFileSystem": {
+      "type": "string",
+      "allowedValues": [
+        "ext4",
+        "xfs"
+      ],
+      "defaultValue": "ext4",
+      "metadata": {
+        "description": "Linux File system"
+      }
+    },
+    "publicIPType": {
+      "type": "string",
+      "allowedValues": [
+        "Static",
+        "Dynamic"
+      ],
+      "defaultValue": "Dynamic",
+      "metadata": {
+        "description": "Public facing IP Type."
+      }
+    },
+
+    "privateIPAddressAnsibleStart": {
+      "type": "string"
+    }
+   
+  },
+  "variables": {
+    "apiVersion": "2015-06-15",
+    "vmStorageAccountContainerName": "vhds",
+    "sshKeyPath": "[concat('/home/',parameters('_adminUsername'),'/.ssh/authorized_keys')]",
+    "publicIPName": "VIP01",
+    "dnsLabelAnsibleController": "[concat('ansible-controller-', uniquestring(resourceGroup().id))]",
+    "sshRootCerBlobLocation": "id_rsa",
+    "sshRootPubBlobLocation": "id_rsa.pub",
+    "publicIPRef": "[resourceId('Microsoft.Network/publicIPAddresses',variables('publicIPName'))]",
+    "frontendSubnetName": "frontEnd",
+    "backendSubnetName": "backEnd",
+    "virtualNetworkName": "AnsibleInfraVnetW",
+    "addressPrefix": "10.0.0.0/16",
+    "frontendSubnetPrefix": "10.0.1.0/24",
+    "backendSubnetPrefix": "10.0.2.0/24",
+    "ansibleControllerVMIPadress": "10.0.1.5",
+    "vnetRef": "[resourceId('Microsoft.Network/virtualNetworks',variables('virtualNetworkName'))]",
+    "backendSubnetRef": "[concat(variables('vnetRef'),'/subnets/',variables('backendSubnetName'))]",
+    "frontendSubnetRef": "[concat(variables('vnetRef'),'/subnets/',variables('frontendSubnetName'))]",
+
+    /*
+    "customScriptAnsibleFile": "configure_ansible.sh",
+    "customScriptAnsibleUrl": "[concat(parameters('baseUrl'),variables('customScriptAnsibleFile'))]",
+    "customScriptAnsibleCommand": "[concat('bash ',variables('customScriptAnsibleFile'))]",
+    "customScriptAnsibleParameters": "[concat(' -i ',parameters('privateIPAddressAnsibleStart'),' -n ',parameters('numberOfAnsibleNodes'),'  -f ',parameters('linuxFileSystem'))]", //ToDO specify IP address
+    "customScriptSSHRootFile": "configure_ssh_root.sh",
+    "customScriptSSHRootUrl": "[concat(parameters('baseUrl'), 'ansible/ansible_configure/', variables('customScriptSSHRootFile'))]",
+    "customScriptSSHRootCommand": "[concat('bash ',variables('customScriptSSHRootFile'),' -a ', parameters('sshStorageAccountName'),' -k ', parameters('_ansibleConfigScriptsLocationAccountKey'))]",
+    // "ansiblePlaybookUrl": "[concat(parameters('baseUrl'),variables('ansiblePlaybookLocation'))]",
+    "pythonAzureScriptUrl": "[concat(parameters('baseUrl'), 'ansible/ansible_configure/', 'GetSSHFromPrivateStorageAccount.py')]",
+    */
+
+    "customScriptAnsibleFile": "configure_ansible.sh",
+    "customScriptAnsibleUrl": "[concat(parameters('_ansibleConfigScriptsLocation'), '/', variables('customScriptAnsibleFile'))]",
+    "customScriptAnsibleCommand": "[concat('bash ',variables('customScriptAnsibleFile'))]",
+    "customScriptAnsibleParameters": "[concat(' -i ', parameters('privateIPAddressAnsibleStart'),' -n ', parameters('numberOfAnsibleNodes'),' -f ', parameters('linuxFileSystem'))]", //ToDO specify IP address
+    "customScriptSSHRootFile": "configure_ssh_root.sh",
+    "customScriptSSHRootUrl": "[concat(parameters('_ansibleConfigScriptsLocation'), '/', variables('customScriptSSHRootFile'))]",
+    "customScriptSSHRootCommand": "[concat('bash ',variables('customScriptSSHRootFile'),' -a ', parameters('_ansibleConfigScriptsStorageAccountName'),' -k ', parameters('_ansibleConfigScriptsLocationAccountKey'))]",
+    // "ansiblePlaybookUrl": "[concat(parameters('baseUrl'),variables('ansiblePlaybookLocation'))]",
+    "pythonAzureScriptUrl": "[concat(parameters('_ansibleConfigScriptsLocation'), '/', 'GetSSHFromPrivateStorageAccount.py')]",
+
+
+
+    // "subnetRef": "[concat(parameters('existingVirtualNetworkId'), '/subnets/', parameters('subnetName'))]",
+    "diagnLogsStorageAccountName": "[concat('diaglogskub', uniquestring(resourceGroup().id))]",
+    "acStorageAccountName": "[concat('ansible', uniquestring(resourceGroup().id))]",
+    "storageRef": "[concat('Microsoft.Storage/storageAccounts/', variables('acStorageAccountName'))]",
+    "NICipconfigAnsible": "ipCnfgAC",
+    "NICipconfigKubMaster": "ipCnfgKubMstr",
+    "NICipconfigAnsibleNodePattern": "ipCnfgAnsibleNode",
+    "NICAnsibleNodeRef": "[resourceId('Microsoft.Network/networkInterfaces', concat (parameters('ansibleNodeVmNamePattern'), '-nic'))]",
+
+
+    "acrStorageName": "[concat('docker', uniqueString(resourceGroup().id))]",
+    "acrStorageId": "[resourceId('Microsoft.Storage/storageAccounts', variables('acrStorageName'))]"
+
+
+  },
+  "resources": [
+    {
+      "apiVersion": "2015-06-15",
+      "type": "Microsoft.Network/virtualNetworks",
+      "name": "[variables('virtualNetworkName')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "[variables('addressPrefix')]"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[variables('frontendSubnetName')]",
+            "properties": {
+              "addressPrefix": "[variables('frontendSubnetPrefix')]"
+            }
+          },
+          {
+            "name": "[variables('backendSubnetName')]",
+            "properties": {
+              "addressPrefix": "[variables('backendSubnetPrefix')]"
+            }
+          }
+        ]
+      }
+    },
+
+
+    {
+      "apiVersion": "2015-06-15",
+      "type": "Microsoft.Network/publicIPAddresses",
+      "name": "[variables('publicIPName')]",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[variables('virtualNetworkName')]"
+
+      ],
+      "properties": {
+        "publicIPAllocationMethod": "[parameters('publicIPType')]",
+        "dnsSettings": {
+          "domainNameLabel": "[variables('dnsLabelAnsibleController')]"
+        }
+      }
+    },
+    {
+      "apiVersion": "2015-06-15",
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "name": "[concat(parameters('ansibleControllerVMname'), '-nsg')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "securityRules": [
+          {
+            "name": "ssh_rule",
+            "properties": {
+              "description": "Locks inbound down to ssh default port 22.",
+              "protocol": "Tcp",
+              "sourcePortRange": "*",
+              "destinationPortRange": "22",
+              "sourceAddressPrefix": "*",
+              "destinationAddressPrefix": "*",
+              "access": "Allow",
+              "priority": 123,
+              "direction": "Inbound"
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "apiVersion": "2015-06-15",
+      "type": "Microsoft.Network/networkInterfaces",
+      "name": "[concat(parameters('ansibleControllerVMname'), '-nic')]",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[concat('Microsoft.Network/publicIPAddresses/', variables('publicIPName'))]",
+        "[resourceId('Microsoft.Network/virtualNetworks',variables('virtualNetworkName'))]"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "[variables('NICipconfigAnsible')]",
+            "properties": {
+              "privateIPAllocationMethod": "Static ",
+              "privateIPAddress": "[concat(variables('ansibleControllerVMIPadress'))]",
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPName'))]"
+              },
+              "subnet": {
+                "id": "[variables('frontendSubnetRef')]"
+              
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "name": "[variables('diagnLogsStorageAccountName')]",
+      "apiVersion": "2015-06-15",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "accountType": "[parameters('storageAccountType')]"
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "name": "[variables('acStorageAccountName')]",
+      "apiVersion": "2015-06-15",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "accountType": "[parameters('storageAccountType')]"
+      }
+    },
+    {
+      "name": "[concat(parameters('ansibleNodeVmNamePattern'),  '-nic', copyindex() )]",
+      "type": "Microsoft.Network/networkInterfaces",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2015-06-15",
+      "copy": {
+        "name": "nicLoop",
+        "count": "[parameters('numberOfAnsibleNodes')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks',variables('virtualNetworkName'))]" 
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "[concat(variables('NICipconfigAnsibleNodePattern'), copyindex())]",
+            "properties": {
+              "privateIPAllocationMethod": "Static ",
+              "privateIPAddress": "[concat(parameters('privateIPAddressAnsibleStart'),copyindex())]",
+              "subnet": {
+                  "id": "[variables('backendSubnetRef')]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "2017-03-30",
+      "type": "Microsoft.Compute/virtualMachines",
+      "name": "[concat(parameters('ansibleNodeVmNamePattern'),copyIndex())]",
+      "location": "[resourceGroup().location]",
+      /*"tags": {
+        "ServerRole": "[parameters('serversRole')]",
+        "ServerEnvironment": "[parameters('serversPurpose')]"
+      },*/
+      "copy": {
+        "name": "AnsibleNodesLoop",
+        "count": "[parameters('numberOfAnsibleNodes')]"
+      },
+      "dependsOn": [
+        "[variables('storageRef')]",
+        "[concat(variables('NICAnsibleNodeRef'),copyIndex())]",
+       // "KubMinionsVMDataDisksLoop"
+      ],
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[parameters('ansibleNodeVMSize')]"
+        },
+        "osProfile": {
+          "computerName": "[concat(parameters('ansibleNodeVmNamePattern'),copyIndex())]",
+          "adminUsername": "[parameters('_adminUsername')]",
+          "adminPassword": "[parameters('_adminPassword')]",
+          "linuxConfiguration": {
+            "disablePasswordAuthentication": false,
+            "ssh": {
+              "publicKeys": [
+                {
+                  "path": "[variables('sshKeyPath')]",
+                  "keyData": "[parameters('_sshKeyData')]"
+                }
+              ]
+            }
+          }
+        },
+        "storageProfile": { //Store it in parameters object
+          "imageReference": {
+            "publisher": "Canonical",
+            "offer": "UbuntuServer",
+            "sku": "16.04-LTS",
+            "version": "latest"
+          },
+          "osDisk": {
+            "name": "[concat(parameters('ansibleNodeVmNamePattern'),copyIndex(), '-OS')]",
+            "caching": "ReadWrite",
+            "createOption": "FromImage"
+          },
+          "dataDisks": [
+          /*  {
+              "lun": 0,
+              "name": "[concat(parameters('ansibleNodeVmNamePattern'), copyIndex(), '-dataDisk')]",
+              "createOption": "attach",
+              "managedDisk": {
+                "id": "[resourceId('Microsoft.Compute/disks', concat(parameters('ansibleNodeVmNamePattern'), copyIndex(), '-dataDisk'))]"
+              },
+              "caching": "Readonly"
+            } */ // No need to have data disks 
+          ]
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[concat(variables('NICAnsibleNodeRef'),copyIndex())]"
+            }
+          ]
+        },
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": true,
+            "storageUri": "[concat(reference(concat('Microsoft.Storage/storageAccounts/', variables('diagnLogsStorageAccountName')), '2016-01-01').primaryEndpoints.blob)]"
+          }
+        }
+      }
+    },
+
+    {
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "name": "[concat(parameters('ansibleNodeVmNamePattern'),copyIndex(),'/configuressh')]",
+      "apiVersion": "2015-06-15",
+      "location": "[resourceGroup().location]",
+      "copy": {
+        "name": "AnsibleNodesExtensionsLoop",
+        "count": "[parameters('numberOfAnsibleNodes')]"
+      },
+      "dependsOn": [
+        "AnsibleNodesLoop"
+      ],
+      "properties": {
+        "publisher": "Microsoft.Azure.Extensions",
+        "type": "CustomScript",
+        "typeHandlerVersion": "2.0",
+        "autoUpgradeMinorVersion": true,
+        "settings": {
+          "fileUris": [
+            "[variables('customScriptSSHRootUrl')]",
+            "[variables('pythonAzureScriptUrl')]"
+          ],
+          "commandToExecute": "[variables('customScriptSSHRootCommand')]"
+        },
+        "protectedSettings": {
+          "storageAccountName": "[parameters('_ansibleConfigScriptsStorageAccountName')]",
+          "storageAccountKey": "[parameters('_ansibleConfigScriptsLocationAccountKey')]"
+        }
+      }
+    },
+
+
+    {
+      "apiVersion": "2015-06-15",
+      "type": "Microsoft.Compute/virtualMachines",
+      "name": "AnsibleController",
+      "location": "[resourceGroup().location]",
+      /* "tags": {
+        "ServerRole": "AnsibleController",
+        "ServerEnvironment": "[parameters('serversPurpose')]"
+      }, */
+      "dependsOn": [
+        "[variables('storageRef')]",
+        "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('ansibleControllerVMname'), '-nic') )]",
+        "AnsibleNodesLoop"
+      ],
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[parameters('ansibleControllerVMSize')]"
+        },
+        "osProfile": {
+          "computerName": "AnsibleController",
+          "adminUsername": "[parameters('_adminUsername')]",
+          "adminPassword": "[parameters('_adminPassword')]",
+          "linuxConfiguration": {
+            "disablePasswordAuthentication": true,
+            "ssh": {
+              "publicKeys": [
+                {
+                  "path": "[variables('sshKeyPath')]",
+                  "keyData": "[parameters('_sshKeyData')]"
+                }
+              ]
+            }
+          }
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "Canonical",
+            "offer": "UbuntuServer",
+            "sku": "16.04-LTS",
+            "version": "latest"
+          },
+          "osDisk": {
+            "name": "AnsibleController-OS",
+            "vhd": {
+              "uri": "[concat('http://',variables('acStorageAccountName'),'.blob.core.windows.net/',variables('vmStorageAccountContainerName'),'/AnsibleController-OS.vhd')]"
+            },
+            "caching": "ReadWrite",
+            "createOption": "FromImage"
+          },
+          "dataDisks": []
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('ansibleControllerVMname'), '-nic'))]"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "name": "AnsibleController/installAnsible",
+      "apiVersion": "2015-06-15",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "AnsibleNodesExtensionsLoop",
+        "AnsibleController"
+      ],
+      "properties": {
+        "publisher": "Microsoft.Azure.Extensions",
+        "type": "CustomScript",
+        "typeHandlerVersion": "2.0",
+        "autoUpgradeMinorVersion": true,
+        "settings": {
+          "fileUris": [
+            "[variables('customScriptAnsibleUrl')]",
+            "[variables('pythonAzureScriptUrl')]"
+          ],
+          "commandToExecute": "[concat(variables('customScriptAnsibleCommand'),variables('customScriptAnsibleParameters'), ' -a', parameters('_ansibleConfigScriptsStorageAccountName'), ' -k', parameters('_ansibleConfigScriptsLocationAccountKey'))]"
+          // "commandToExecute": "[concat(variables('customScriptAnsibleCommand'),variables('customScriptAnsibleParameters'),' -a ', parameters('_ansibleConfigScriptsStorageAccountName'),' -k ', parameters('_ansibleConfigScriptsLocationAccountKey'))]"
+        },
+        "protectedSettings": {
+          "storageAccountName": "[parameters('_ansibleConfigScriptsStorageAccountName')]",
+          "storageAccountKey": "[parameters('_ansibleConfigScriptsLocationAccountKey')]"
+        }
+      }
+    }
+    
+  ],
+  "outputs": {
+    "sshCommand": {
+      "type": "string",
+      "value": "[concat('ssh ', parameters('_adminUsername'), '@', variables('dnsLabelAnsibleController'), '.', resourceGroup().location, '.cloudapp.azure.com')]"
+    }
+  }
+}
+
+
